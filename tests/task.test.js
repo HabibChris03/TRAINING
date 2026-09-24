@@ -1,89 +1,64 @@
 const request = require("supertest");
-const jwt = require("jsonwebtoken");
+const mongoose = require("mongoose");
+const { MongoMemoryServer } = require("mongodb-memory-server");
 
-let mockTasks = [];
-let mockUsers = [];
-
-jest.mock("../src/models/task", () => {
-  return function (data) {
-    this._id = "task_" + (mockTasks.length + 1);
-    Object.assign(this, data);
-    this.save = async () => {
-      mockTasks.push(this);
-      return this;
-    };
-  };
-});
-
-const Task = require("../src/models/task");
-Task.find = (filter = {}) => ({
-  sort: () => Promise.resolve(
-    mockTasks.filter((t) => t.userId === filter.userId && (!filter.status || t.status === filter.status))
-  ),
-});
-Task.findOne = async (filter) => {
-  const item = mockTasks.find((t) => t._id === filter._id && t.userId === filter.userId);
-  if (!item) return null;
-  return {
-    ...item,
-    save: async function () {
-      const index = mockTasks.findIndex((t) => t._id === item._id);
-      mockTasks[index] = this;
-      return this;
-    },
-  };
-};
-Task.findOneAndDelete = async (filter) => {
-  const index = mockTasks.findIndex((t) => t._id === filter._id && t.userId === filter.userId);
-  return index !== -1 ? mockTasks.splice(index, 1)[0] : null;
-};
-
-jest.mock("../src/models/auth", () => {
-  return function (data) {
-    this._id = "user_" + (mockUsers.length + 1);
-    Object.assign(this, data);
-    this.save = async () => {
-      mockUsers.push(this);
-      return this;
-    };
-  };
-});
-
-const User = require("../src/models/auth");
-User.findOne = async (filter) => mockUsers.find((u) => u.email === filter.email) || null;
+// Set JWT_SECRET for test environment before requiring app
+process.env.JWT_SECRET = "test_environment_secure_jwt_secret_key";
+process.env.NODE_ENV = "test";
 
 const app = require("../src/app");
+const Task = require("../src/models/task");
+const User = require("../src/models/auth");
 
-describe("Task API Tests", () => {
-  let token;
-  const userId = "test_user_1";
+let mongoServer;
+let token;
+let userId;
 
-  beforeEach(() => {
-    mockTasks = [];
-    mockUsers = [];
-    token = jwt.sign({ userId }, "mysecretkey", { expiresIn: "1h" });
+beforeAll(async () => {
+  mongoServer = await MongoMemoryServer.create();
+  const uri = mongoServer.getUri();
+  await mongoose.connect(uri);
+});
+
+afterAll(async () => {
+  await mongoose.disconnect();
+  await mongoServer.stop();
+});
+
+beforeEach(async () => {
+  await Task.deleteMany({});
+  await User.deleteMany({});
+
+  // Create a real test user in MongoDB
+  const res = await request(app).post("/auth/register").send({
+    name: "Habib",
+    email: "habib@example.com",
+    password: "password123",
   });
 
-  test("registers a new user", async () => {
+  token = res.body.token;
+  userId = res.body.user.id;
+});
+
+describe("Authentication & Security", () => {
+  test("registers a new user in MongoDB", async () => {
     const res = await request(app).post("/auth/register").send({
-      name: "John Doe",
-      email: "john@example.com",
+      name: "Alice",
+      email: "alice@example.com",
       password: "password123",
     });
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBeDefined();
+
+    const userInDb = await User.findOne({ email: "alice@example.com" });
+    expect(userInDb).not.toBeNull();
+    expect(userInDb.name).toBe("Alice");
   });
 
-  test("logs in an existing user", async () => {
-    await request(app).post("/auth/register").send({
-      name: "Jane Doe",
-      email: "jane@example.com",
-      password: "password123",
-    });
-
+  test("logs in an existing user and returns token", async () => {
     const res = await request(app).post("/auth/login").send({
-      email: "jane@example.com",
+      email: "habib@example.com",
       password: "password123",
     });
 
@@ -91,12 +66,24 @@ describe("Task API Tests", () => {
     expect(res.body.token).toBeDefined();
   });
 
-  test("returns 401 when token is missing", async () => {
+  test("blocks NoSQL injection attempt when email is not text", async () => {
+    const res = await request(app).post("/auth/login").send({
+      email: { $gt: "" },
+      password: "password123",
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/text/i);
+  });
+
+  test("blocks access to tasks without token", async () => {
     const res = await request(app).get("/tasks");
     expect(res.status).toBe(401);
   });
+});
 
-  test("creates a task when authenticated", async () => {
+describe("Task CRUD with Real MongoDB", () => {
+  test("creates a task in MongoDB", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -108,6 +95,10 @@ describe("Task API Tests", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.task.title).toBe("Finish assignment");
+
+    const savedTask = await Task.findOne({ title: "Finish assignment" });
+    expect(savedTask).not.toBeNull();
+    expect(savedTask.userId.toString()).toBe(userId);
   });
 
   test("rejects task creation if title is missing", async () => {
@@ -119,10 +110,22 @@ describe("Task API Tests", () => {
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toBe("Title is required");
+    expect(res.body.message).toMatch(/Title is required/i);
   });
 
-  test("retrieves tasks and filters by status", async () => {
+  test("rejects non-text title with 400 instead of 500 server crash", async () => {
+    const res = await request(app)
+      .post("/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: 12345,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/must be text/i);
+  });
+
+  test("retrieves tasks and filters by status from MongoDB", async () => {
     await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -144,32 +147,35 @@ describe("Task API Tests", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(filterRes.status).toBe(200);
     expect(filterRes.body.length).toBe(1);
-    expect(filterRes.body[0].status).toBe("todo");
+    expect(filterRes.body[0].title).toBe("Task 1");
   });
 
-  test("updates an existing task", async () => {
+  test("updates an existing task in MongoDB", async () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Initial Title", status: "todo" });
+      .send({ title: "Original Title", status: "todo" });
 
     const taskId = createRes.body.task._id;
 
     const updateRes = await request(app)
       .put(`/tasks/${taskId}`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "New Title", status: "done" });
+      .send({ title: "Updated Title", status: "done" });
 
     expect(updateRes.status).toBe(200);
-    expect(updateRes.body.task.title).toBe("New Title");
-    expect(updateRes.body.task.status).toBe("done");
+    expect(updateRes.body.task.title).toBe("Updated Title");
+
+    const updatedInDb = await Task.findById(taskId);
+    expect(updatedInDb.title).toBe("Updated Title");
+    expect(updatedInDb.status).toBe("done");
   });
 
-  test("deletes a task by id", async () => {
+  test("deletes a task by id from MongoDB", async () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Delete Me", status: "todo" });
+      .send({ title: "Task to delete", status: "todo" });
 
     const taskId = createRes.body.task._id;
 
@@ -178,6 +184,8 @@ describe("Task API Tests", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(deleteRes.status).toBe(200);
-    expect(deleteRes.body.message).toBe("Task deleted successfully");
+
+    const deletedFromDb = await Task.findById(taskId);
+    expect(deletedFromDb).toBeNull();
   });
 });

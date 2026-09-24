@@ -1,12 +1,18 @@
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
 
 const authRoutes = require("./routes/authroute");
 const taskRoutes = require("./routes/taskroute");
 
 const app = express();
 
-// Middlewares
+// Security and logging middlewares
+app.use(helmet());
+if (process.env.NODE_ENV !== "test") {
+  app.use(morgan("dev"));
+}
 app.use(cors());
 app.use(express.json());
 
@@ -14,7 +20,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/tasks", taskRoutes);
 
-//health check route
+// Health check route
 app.get("/", (req, res) => {
   res.send("Task Manager API is running");
 });

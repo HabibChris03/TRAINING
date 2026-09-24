@@ -5,20 +5,38 @@ const validStatuses = ["todo", "in-progress", "done"];
 async function createTask(req, res) {
   try {
     const { title, description, status, dueDate } = req.body;
-    if (!title || title.trim() === "") {
-      return res.status(400).json({ message: "Title is required" });
+
+    // Validate title: required, must be string, cannot be empty
+    if (!title || typeof title !== "string" || title.trim() === "") {
+      return res.status(400).json({ message: "Title is required and must be text" });
     }
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
+
+    // Validate description: if provided, must be string
+    if (description !== undefined && typeof description !== "string") {
+      return res.status(400).json({ message: "Description must be text" });
     }
-    if (dueDate && isNaN(Date.parse(dueDate))) {
-      return res.status(400).json({ message: "Invalid due date format" });
+
+    // Validate status: if provided, must be string and in valid list
+    if (status !== undefined) {
+      if (typeof status !== "string" || !validStatuses.includes(status.trim())) {
+        return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
+      }
+    }
+
+    // Validate dueDate: if provided, must be valid date
+    if (dueDate !== undefined && dueDate !== null && dueDate !== "") {
+      if (typeof dueDate !== "string" && !(dueDate instanceof Date)) {
+        return res.status(400).json({ message: "Invalid due date format" });
+      }
+      if (isNaN(Date.parse(dueDate))) {
+        return res.status(400).json({ message: "Invalid due date format" });
+      }
     }
 
     const task = new Task({
       title: title.trim(),
-      description: description || "",
-      status: status || "todo",
+      description: description ? description.trim() : "",
+      status: status ? status.trim() : "todo",
       dueDate: dueDate ? new Date(dueDate) : null,
       userId: req.user.userId,
     });
@@ -62,14 +80,30 @@ async function getTaskById(req, res) {
 async function updateTask(req, res) {
   try {
     const { title, description, status, dueDate } = req.body;
-    if (title !== undefined && title.trim() === "") {
-      return res.status(400).json({ message: "Title cannot be empty" });
+
+    if (title !== undefined) {
+      if (typeof title !== "string" || title.trim() === "") {
+        return res.status(400).json({ message: "Title cannot be empty and must be text" });
+      }
     }
-    if (status && !validStatuses.includes(status)) {
-      return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
+
+    if (description !== undefined && typeof description !== "string") {
+      return res.status(400).json({ message: "Description must be text" });
     }
-    if (dueDate && isNaN(Date.parse(dueDate))) {
-      return res.status(400).json({ message: "Invalid due date format" });
+
+    if (status !== undefined) {
+      if (typeof status !== "string" || !validStatuses.includes(status.trim())) {
+        return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
+      }
+    }
+
+    if (dueDate !== undefined && dueDate !== null && dueDate !== "") {
+      if (typeof dueDate !== "string" && !(dueDate instanceof Date)) {
+        return res.status(400).json({ message: "Invalid due date format" });
+      }
+      if (isNaN(Date.parse(dueDate))) {
+        return res.status(400).json({ message: "Invalid due date format" });
+      }
     }
 
     const task = await Task.findOne({ _id: req.params.id, userId: req.user.userId });
@@ -78,8 +112,8 @@ async function updateTask(req, res) {
     }
 
     if (title !== undefined) task.title = title.trim();
-    if (description !== undefined) task.description = description;
-    if (status !== undefined) task.status = status;
+    if (description !== undefined) task.description = description.trim();
+    if (status !== undefined) task.status = status.trim();
     if (dueDate !== undefined) task.dueDate = dueDate ? new Date(dueDate) : null;
 
     await task.save();

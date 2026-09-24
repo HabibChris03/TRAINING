@@ -1,10 +1,10 @@
 Task Manager Backend API
 
-This is a simple REST API built with Node.js, Express, and MongoDB. It allows users to register, log in, and manage their daily tasks. Each user can create, view, update, and delete their own tasks.
+This is a REST API built with Node.js, Express, and MongoDB. It allows users to register, log in, and manage their daily tasks. Each user can create, view, update, and delete their own tasks.
 
 What Each Task Contains:
 Each task in the database has five main pieces of information:
-1. Title: The name of the task. This is required.
+1. Title: The name of the task. This is required and must be text.
 2. Description: Extra details or notes about the task.
 3. Status: Can only be one of three values: todo, in-progress, or done. The default is todo.
 4. Due Date: An optional deadline date for the task.
@@ -16,9 +16,13 @@ npm install
 
 Next, create a file named .env in the project root folder and put your settings inside:
 PORT=3000
-MONGODB_URL=mongodb+srv://<>:<>@cluster0.q0jjlm9.mongodb.net/?appName=Cluster0
-JWT_SECRET=mysecretkey
- I used MongoDB Atlas in the cloud, you can replace the MONGODB_URL line with your own Atlas connection link.
+MONGODB_URL=mongodb://localhost:27017/taskmanager
+JWT_SECRET=set_a_long_random_secret_phrase_here
+
+Important Note on JWT_SECRET:
+You must provide your own strong secret key in the .env file. The application requires this variable to run securely. Do not share your secret key publicly.
+
+If you use MongoDB Atlas in the cloud, you can replace the MONGODB_URL line with your own Atlas connection link.
 
 How to Run the Application:
 To run the project while developing with auto-restart:
@@ -33,7 +37,7 @@ How to Run the Automated Tests:
 To run the automated test suite, type:
 npm test
 
-This will run all 8 tests with Jest to make sure registration, login, route protection, task creation, validation, filtering, updating, and deleting work properly.
+This will run the test suite against a real MongoDB database instance to verify registration, login, rate limiting, NoSQL injection defenses, task creation, validation, filtering, updating, and deleting.
 
 How to Use the API Endpoints:
 
@@ -53,6 +57,7 @@ Send a POST request to /auth/login with this JSON body:
   "password": "mypassword123"
 }
 The server will check your credentials and send back your JWT token.
+Note: Login is protected by rate limiting. After 10 failed attempts from the same IP address within 15 minutes, requests will be temporarily blocked.
 
 3. Create a task:
 Send a POST request to /tasks.
@@ -94,16 +99,28 @@ Include the header:
 Authorization: Bearer YOUR_TOKEN_HERE
 
 Security Risks Handled:
-Here is a quick summary of the security risks we took care of:
+Here is a summary of the security protections included in this project:
 
-1. Password Safety:
-We never save passwords in plain text. We hash every password using bcrypt before saving it into MongoDB. This protects user passwords if the database is ever inspected.
+1. Secret Key Enforcement:
+The API requires JWT_SECRET from the environment and does not fall back to any hardcoded default keys.
 
-2. Protecting Private Routes:
-We put an auth middleware on all /tasks routes. Any request without a valid JWT token gets blocked with a 401 Unauthorized status.
+2. NoSQL Injection Prevention:
+User inputs such as email and password are required to be text strings and are checked for valid email formats before querying MongoDB. Objects or query operators are rejected with a 400 Bad Request.
 
-3. Keeping Users and Tasks Isolated:
-Every task stores the creator userId. When anyone tries to view, edit, or delete a task, the code checks that the task belongs to that exact user. User A cannot view, edit, or delete tasks belonging to User B.
+3. Protection Against Brute Force Guessing:
+A rate limiter on the login endpoint limits repeated attempts to prevent password guessing.
 
-4. Input Checking and Clean Errors:
-If someone forgets the title or gives an invalid status or bad date, the server sends back a clear error message instead of crashing.
+4. Password Safety:
+Passwords are never saved in plain text. They are hashed using bcrypt with 10 salt rounds before saving to the database.
+
+5. Route Protection:
+All task endpoints are protected by authentication middleware. Requests without a valid JWT token receive a 401 Unauthorized status.
+
+6. User Data Isolation:
+Tasks are scoped to the user ID of the owner. Users cannot view, update, or delete tasks belonging to other accounts.
+
+7. Input Type Validation:
+All fields are checked to ensure appropriate data types. Sending non-text values (such as numbers for titles) returns clear 400 validation messages rather than unhandled 500 server crashes.
+
+8. HTTP Security Headers and Logging:
+Helmet is enabled to configure standard security headers, and Morgan logs HTTP requests during development.
