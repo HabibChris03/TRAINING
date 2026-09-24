@@ -1,12 +1,10 @@
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
 
-// In-memory data arrays for easy testing
 let mockTasks = [];
 let mockUsers = [];
 let mockCounter = 1;
 
-// Easy Mock Task Model
 const mockTaskMethods = {
   find: (query = {}) => ({
     sort: () => {
@@ -50,7 +48,6 @@ function mockTaskModel(data) {
 }
 Object.assign(mockTaskModel, mockTaskMethods);
 
-// Easy Mock User Model
 const mockUserMethods = {
   findOne: async (query = {}) => {
     return mockUsers.find((u) => u.email === query.email) || null;
@@ -69,13 +66,12 @@ function mockUserModel(data) {
 }
 Object.assign(mockUserModel, mockUserMethods);
 
-// Mock the models using mock prefix
 jest.mock("../src/models/task", () => mockTaskModel);
 jest.mock("../src/models/auth", () => mockUserModel);
 
 const app = require("../src/app");
 
-describe("Simple Task Management API Tests", () => {
+describe("Task Management API", () => {
   let token;
   const testUserId = "507f191e810c19729de860e1";
 
@@ -83,13 +79,10 @@ describe("Simple Task Management API Tests", () => {
     mockTasks = [];
     mockUsers = [];
     mockCounter = 1;
-
-    // Create a simple test JWT token
     token = jwt.sign({ userId: testUserId }, "mysecretkey", { expiresIn: "1h" });
   });
 
-  // 1. User Register
-  test("1. Should register a user and return a token", async () => {
+  test("registers a new user and returns token", async () => {
     const res = await request(app).post("/auth/register").send({
       name: "John Doe",
       email: "john@example.com",
@@ -101,16 +94,13 @@ describe("Simple Task Management API Tests", () => {
     expect(res.body.message).toBe("Registered successfully");
   });
 
-  // 2. User Login
-  test("2. Should login a registered user and return a token", async () => {
-    // First register
+  test("logs in an existing user and returns token", async () => {
     await request(app).post("/auth/register").send({
       name: "Jane Doe",
       email: "jane@example.com",
       password: "password123",
     });
 
-    // Then login
     const res = await request(app).post("/auth/login").send({
       email: "jane@example.com",
       password: "password123",
@@ -121,16 +111,14 @@ describe("Simple Task Management API Tests", () => {
     expect(res.body.message).toBe("Logged in successfully");
   });
 
-  // 3. Reject access without token
-  test("3. Should reject accessing /tasks without a token (401)", async () => {
+  test("blocks access to tasks without token", async () => {
     const res = await request(app).get("/tasks");
 
     expect(res.status).toBe(401);
     expect(res.body.message).toBe("No token provided, authorization denied");
   });
 
-  // 4. Create Task
-  test("4. Should create a task when authenticated", async () => {
+  test("creates a task when authenticated", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -147,8 +135,7 @@ describe("Simple Task Management API Tests", () => {
     expect(res.body.task.status).toBe("todo");
   });
 
-  // 5. Validation error when title is missing
-  test("5. Should return 400 if title is missing", async () => {
+  test("rejects task creation when title is missing", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -161,9 +148,7 @@ describe("Simple Task Management API Tests", () => {
     expect(res.body.message).toBe("Title is required");
   });
 
-  // 6. View all tasks and filter by status
-  test("6. Should get tasks and filter tasks by status", async () => {
-    // Create 2 tasks
+  test("returns tasks and supports filtering by status", async () => {
     await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -174,14 +159,12 @@ describe("Simple Task Management API Tests", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ title: "Task 2", status: "done" });
 
-    // Get all tasks
     const allRes = await request(app)
       .get("/tasks")
       .set("Authorization", `Bearer ${token}`);
     expect(allRes.status).toBe(200);
     expect(allRes.body.length).toBe(2);
 
-    // Filter by status = todo
     const filterRes = await request(app)
       .get("/tasks?status=todo")
       .set("Authorization", `Bearer ${token}`);
@@ -190,8 +173,7 @@ describe("Simple Task Management API Tests", () => {
     expect(filterRes.body[0].status).toBe("todo");
   });
 
-  // 7. Update Task
-  test("7. Should update a task", async () => {
+  test("updates an existing task", async () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -209,8 +191,7 @@ describe("Simple Task Management API Tests", () => {
     expect(updateRes.body.task.status).toBe("done");
   });
 
-  // 8. Delete Task
-  test("8. Should delete a task by ID", async () => {
+  test("deletes a task by id", async () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)

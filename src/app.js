@@ -14,7 +14,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 app.use("/tasks", taskRoutes);
 
-// Simple health check route
+//health check route
 app.get("/", (req, res) => {
   res.send("Task Manager API is running");
 });

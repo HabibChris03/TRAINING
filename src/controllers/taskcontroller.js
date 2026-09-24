@@ -2,7 +2,6 @@ const Task = require("../models/task");
 
 const validStatuses = ["todo", "in-progress", "done"];
 
-// Create a task
 async function createTask(req, res) {
   try {
     const { title, description, status, dueDate } = req.body;
@@ -31,7 +30,6 @@ async function createTask(req, res) {
   }
 }
 
-//Get all tasks (with status filter)
 async function getTasks(req, res) {
   try {
     const filter = { userId: req.user.userId };
@@ -49,7 +47,6 @@ async function getTasks(req, res) {
   }
 }
 
-// Get a single task by ID
 async function getTaskById(req, res) {
   try {
     const task = await Task.findOne({ _id: req.params.id, userId: req.user.userId });
@@ -62,7 +59,6 @@ async function getTaskById(req, res) {
   }
 }
 
-// Update a task by ID
 async function updateTask(req, res) {
   try {
     const { title, description, status, dueDate } = req.body;
@@ -75,6 +71,7 @@ async function updateTask(req, res) {
     if (dueDate && isNaN(Date.parse(dueDate))) {
       return res.status(400).json({ message: "Invalid due date format" });
     }
+
     const task = await Task.findOne({ _id: req.params.id, userId: req.user.userId });
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
@@ -92,7 +89,6 @@ async function updateTask(req, res) {
   }
 }
 
-// Delete a task by ID
 async function deleteTask(req, res) {
   try {
     const task = await Task.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
