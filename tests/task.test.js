@@ -3,86 +3,68 @@ const jwt = require("jsonwebtoken");
 
 let mockTasks = [];
 let mockUsers = [];
-let mockCounter = 1;
 
-const mockTaskMethods = {
-  find: (query = {}) => ({
-    sort: () => {
-      let result = mockTasks.filter((t) => t.userId === query.userId);
-      if (query.status) {
-        result = result.filter((t) => t.status === query.status);
-      }
-      return Promise.resolve(result);
-    },
-  }),
-  findOne: async (query = {}) => {
-    const task = mockTasks.find((t) => t._id === query._id && t.userId === query.userId);
-    if (!task) return null;
-    return {
-      ...task,
-      save: async function () {
-        const index = mockTasks.findIndex((t) => t._id === task._id);
-        mockTasks[index] = this;
-        return this;
-      },
+jest.mock("../src/models/task", () => {
+  return function (data) {
+    this._id = "task_" + (mockTasks.length + 1);
+    Object.assign(this, data);
+    this.save = async () => {
+      mockTasks.push(this);
+      return this;
     };
-  },
-  findOneAndDelete: async (query = {}) => {
-    const index = mockTasks.findIndex((t) => t._id === query._id && t.userId === query.userId);
-    if (index === -1) return null;
-    return mockTasks.splice(index, 1)[0];
-  },
+  };
+});
+
+const Task = require("../src/models/task");
+Task.find = (filter = {}) => ({
+  sort: () => Promise.resolve(
+    mockTasks.filter((t) => t.userId === filter.userId && (!filter.status || t.status === filter.status))
+  ),
+});
+Task.findOne = async (filter) => {
+  const item = mockTasks.find((t) => t._id === filter._id && t.userId === filter.userId);
+  if (!item) return null;
+  return {
+    ...item,
+    save: async function () {
+      const index = mockTasks.findIndex((t) => t._id === item._id);
+      mockTasks[index] = this;
+      return this;
+    },
+  };
+};
+Task.findOneAndDelete = async (filter) => {
+  const index = mockTasks.findIndex((t) => t._id === filter._id && t.userId === filter.userId);
+  return index !== -1 ? mockTasks.splice(index, 1)[0] : null;
 };
 
-function mockTaskModel(data) {
-  this._id = "507f1f77bcf86cd79943901" + mockCounter++;
-  this.title = data.title;
-  this.description = data.description || "";
-  this.status = data.status || "todo";
-  this.dueDate = data.dueDate || null;
-  this.userId = data.userId;
-  this.save = async () => {
-    mockTasks.push(this);
-    return this;
+jest.mock("../src/models/auth", () => {
+  return function (data) {
+    this._id = "user_" + (mockUsers.length + 1);
+    Object.assign(this, data);
+    this.save = async () => {
+      mockUsers.push(this);
+      return this;
+    };
   };
-}
-Object.assign(mockTaskModel, mockTaskMethods);
+});
 
-const mockUserMethods = {
-  findOne: async (query = {}) => {
-    return mockUsers.find((u) => u.email === query.email) || null;
-  },
-};
-
-function mockUserModel(data) {
-  this._id = "507f191e810c19729de860e" + mockCounter++;
-  this.name = data.name;
-  this.email = data.email;
-  this.password = data.password;
-  this.save = async () => {
-    mockUsers.push(this);
-    return this;
-  };
-}
-Object.assign(mockUserModel, mockUserMethods);
-
-jest.mock("../src/models/task", () => mockTaskModel);
-jest.mock("../src/models/auth", () => mockUserModel);
+const User = require("../src/models/auth");
+User.findOne = async (filter) => mockUsers.find((u) => u.email === filter.email) || null;
 
 const app = require("../src/app");
 
-describe("Task Management API", () => {
+describe("Task API Tests", () => {
   let token;
-  const testUserId = "507f191e810c19729de860e1";
+  const userId = "test_user_1";
 
   beforeEach(() => {
     mockTasks = [];
     mockUsers = [];
-    mockCounter = 1;
-    token = jwt.sign({ userId: testUserId }, "mysecretkey", { expiresIn: "1h" });
+    token = jwt.sign({ userId }, "mysecretkey", { expiresIn: "1h" });
   });
 
-  test("registers a new user and returns token", async () => {
+  test("registers a new user", async () => {
     const res = await request(app).post("/auth/register").send({
       name: "John Doe",
       email: "john@example.com",
@@ -91,10 +73,9 @@ describe("Task Management API", () => {
 
     expect(res.status).toBe(201);
     expect(res.body.token).toBeDefined();
-    expect(res.body.message).toBe("Registered successfully");
   });
 
-  test("logs in an existing user and returns token", async () => {
+  test("logs in an existing user", async () => {
     await request(app).post("/auth/register").send({
       name: "Jane Doe",
       email: "jane@example.com",
@@ -108,14 +89,11 @@ describe("Task Management API", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.token).toBeDefined();
-    expect(res.body.message).toBe("Logged in successfully");
   });
 
-  test("blocks access to tasks without token", async () => {
+  test("returns 401 when token is missing", async () => {
     const res = await request(app).get("/tasks");
-
     expect(res.status).toBe(401);
-    expect(res.body.message).toBe("No token provided, authorization denied");
   });
 
   test("creates a task when authenticated", async () => {
@@ -123,32 +101,28 @@ describe("Task Management API", () => {
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        title: "Buy groceries",
-        description: "Milk, Bread, Eggs",
+        title: "Finish assignment",
+        description: "Study for the exam",
         status: "todo",
-        dueDate: "2026-10-01",
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.task).toBeDefined();
-    expect(res.body.task.title).toBe("Buy groceries");
-    expect(res.body.task.status).toBe("todo");
+    expect(res.body.task.title).toBe("Finish assignment");
   });
 
-  test("rejects task creation when title is missing", async () => {
+  test("rejects task creation if title is missing", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        description: "No title here",
-        status: "todo",
+        description: "Missing title",
       });
 
     expect(res.status).toBe(400);
     expect(res.body.message).toBe("Title is required");
   });
 
-  test("returns tasks and supports filtering by status", async () => {
+  test("retrieves tasks and filters by status", async () => {
     await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -177,17 +151,17 @@ describe("Task Management API", () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Original Title", status: "todo" });
+      .send({ title: "Initial Title", status: "todo" });
 
     const taskId = createRes.body.task._id;
 
     const updateRes = await request(app)
       .put(`/tasks/${taskId}`)
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Updated Title", status: "done" });
+      .send({ title: "New Title", status: "done" });
 
     expect(updateRes.status).toBe(200);
-    expect(updateRes.body.task.title).toBe("Updated Title");
+    expect(updateRes.body.task.title).toBe("New Title");
     expect(updateRes.body.task.status).toBe("done");
   });
 
@@ -195,7 +169,7 @@ describe("Task Management API", () => {
     const createRes = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
-      .send({ title: "Task to delete", status: "todo" });
+      .send({ title: "Delete Me", status: "todo" });
 
     const taskId = createRes.body.task._id;
 

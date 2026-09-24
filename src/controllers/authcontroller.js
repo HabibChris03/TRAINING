@@ -1,12 +1,10 @@
-const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../models/auth");
 
-const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "mysecretkey";
 
-router.post("/register", async (req, res) => {
+async function register(req, res) {
   try {
     const { name, email, password } = req.body;
     if (!name || !email || !password) {
@@ -19,11 +17,7 @@ router.post("/register", async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({
-      name,
-      email,
-      password: hashedPassword,
-    });
+    const user = new User({ name, email, password: hashedPassword });
     await user.save();
 
     const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: "1d" });
@@ -36,9 +30,9 @@ router.post("/register", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
-});
+}
 
-router.post("/login", async (req, res) => {
+async function login(req, res) {
   try {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -65,6 +59,6 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     res.status(500).json({ message: "Server error" });
   }
-});
+}
 
-module.exports = router;
+module.exports = { register, login };
