@@ -1,0 +1,74 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Setup Python for Ruff Linter
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Run Ruff Linter
+        run: |
+          pip install ruff
+          ruff check . --exit-zero
+
+      - name: Run Automated Tests
+        run: npm test
+        env:
+          JWT_SECRET: ci_pipeline_jwt_secret_testing_key_12345
+          NODE_ENV: test
+
+  docker-build:
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      - name: Build Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: task-manager-api:${{ github.sha }}
+
+  auto-deploy:
+    needs: [lint-and-test, docker-build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Cloud Auto-Deploy
+        run: |
+          if [ -n "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "Triggering Render auto-deploy..."
+            curl -f -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+            echo "Auto-deploy triggered successfully."
+          else
+            echo "No RENDER_DEPLOY_HOOK_URL configured yet. Skipping webhook trigger."
+          fi
