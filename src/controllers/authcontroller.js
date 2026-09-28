@@ -13,7 +13,6 @@ async function register(req, res) {
 
     const { name, email, password } = req.body;
 
-    // Validate types to prevent NoSQL injection and bad inputs
     if (
       typeof name !== "string" ||
       typeof email !== "string" ||
@@ -57,7 +56,7 @@ async function register(req, res) {
       token,
       user: { id: user._id, name: user.name, email: user.email },
     });
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ message: "Server error" });
   }
 }
@@ -71,7 +70,6 @@ async function login(req, res) {
 
     const { email, password } = req.body;
 
-    // Validate types to prevent NoSQL injection attacks (e.g. { "email": { "$gt": "" } })
     if (typeof email !== "string" || typeof password !== "string") {
       return res.status(400).json({ message: "Email and password must be text" });
     }
@@ -102,7 +100,7 @@ async function login(req, res) {
       token,
       user: { id: user._id, name: user.name, email: user.email },
     });
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ message: "Server error" });
   }
 }
