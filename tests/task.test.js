@@ -29,7 +29,7 @@ beforeEach(async () => {
   await Task.deleteMany({});
   await User.deleteMany({});
 
-  // Create a real test user in MongoDB
+  // Create a test user in MongoDB
   const res = await request(app).post("/auth/register").send({
     name: "Habib",
     email: "habib@example.com",
@@ -40,7 +40,35 @@ beforeEach(async () => {
   userId = res.body.user.id;
 });
 
-describe("Authentication & Security", () => {
+describe("System Health & Request Tracking (TM-5)", () => {
+  test("returns 200 and healthy status when database is connected", async () => {
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe("healthy");
+    expect(res.body.database.status).toBe("connected");
+    expect(res.body.database.readyState).toBe(1);
+    expect(res.body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+  });
+
+  test("attaches an X-Request-Id header to responses", async () => {
+    const res = await request(app).get("/health");
+
+    expect(res.headers["x-request-id"]).toBeDefined();
+    expect(typeof res.headers["x-request-id"]).toBe("string");
+  });
+
+  test("preserves client-provided X-Request-Id header", async () => {
+    const customId = "client-trace-id-12345";
+    const res = await request(app)
+      .get("/health")
+      .set("X-Request-Id", customId);
+
+    expect(res.headers["x-request-id"]).toBe(customId);
+  });
+});
+
+describe("Authentication & Security (TM-2)", () => {
   test("registers a new user in MongoDB", async () => {
     const res = await request(app).post("/auth/register").send({
       name: "Alice",
@@ -80,10 +108,34 @@ describe("Authentication & Security", () => {
     const res = await request(app).get("/tasks");
     expect(res.status).toBe(401);
   });
+
+  test("enforces user isolation: users only see their own tasks", async () => {
+    // Create task for Habib
+    await request(app)
+      .post("/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Habib Private Task", status: "todo" });
+
+    // Register user Alice
+    const aliceRes = await request(app).post("/auth/register").send({
+      name: "Alice",
+      email: "alice2@example.com",
+      password: "password123",
+    });
+    const aliceToken = aliceRes.body.token;
+
+    // Alice queries tasks
+    const res = await request(app)
+      .get("/tasks")
+      .set("Authorization", `Bearer ${aliceToken}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(0); // Alice cannot see Habib's task
+  });
 });
 
-describe("Task CRUD with Real MongoDB", () => {
-  test("creates a task in MongoDB", async () => {
+describe("Task CRUD & Null Handling Bugfix (TM-1)", () => {
+  test("creates a task with valid data in MongoDB", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
@@ -101,16 +153,30 @@ describe("Task CRUD with Real MongoDB", () => {
     expect(savedTask.userId.toString()).toBe(userId);
   });
 
-  test("rejects task creation if title is missing", async () => {
+  test("rejects task creation if title is null", async () => {
     const res = await request(app)
       .post("/tasks")
       .set("Authorization", `Bearer ${token}`)
       .send({
-        description: "Missing title",
+        title: null,
+        status: "todo",
       });
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/Title is required/i);
+    expect(res.body.message).toMatch(/title/i);
+  });
+
+  test("rejects task creation if status is null", async () => {
+    const res = await request(app)
+      .post("/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        title: "Valid Title",
+        status: null,
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/status/i);
   });
 
   test("rejects non-text title with 400 instead of 500 server crash", async () => {
@@ -169,6 +235,40 @@ describe("Task CRUD with Real MongoDB", () => {
     const updatedInDb = await Task.findById(taskId);
     expect(updatedInDb.title).toBe("Updated Title");
     expect(updatedInDb.status).toBe("done");
+  });
+
+  test("rejects updating task with null title", async () => {
+    const createRes = await request(app)
+      .post("/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Original Title", status: "todo" });
+
+    const taskId = createRes.body.task._id;
+
+    const updateRes = await request(app)
+      .put(`/tasks/${taskId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: null });
+
+    expect(updateRes.status).toBe(400);
+    expect(updateRes.body.message).toMatch(/title/i);
+  });
+
+  test("rejects updating task with null status", async () => {
+    const createRes = await request(app)
+      .post("/tasks")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ title: "Original Title", status: "todo" });
+
+    const taskId = createRes.body.task._id;
+
+    const updateRes = await request(app)
+      .put(`/tasks/${taskId}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: null });
+
+    expect(updateRes.status).toBe(400);
+    expect(updateRes.body.message).toMatch(/status/i);
   });
 
   test("deletes a task by id from MongoDB", async () => {

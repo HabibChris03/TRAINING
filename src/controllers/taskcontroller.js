@@ -6,24 +6,20 @@ async function createTask(req, res) {
   try {
     const { title, description, status, dueDate } = req.body;
 
-    // Validate title: required, must be string, cannot be empty
     if (!title || typeof title !== "string" || title.trim() === "") {
       return res.status(400).json({ message: "Title is required and must be text" });
     }
 
-    // Validate description: if provided, must be string
-    if (description !== undefined && typeof description !== "string") {
+    if (description !== undefined && description !== null && typeof description !== "string") {
       return res.status(400).json({ message: "Description must be text" });
     }
 
-    // Validate status: if provided, must be string and in valid list
     if (status !== undefined) {
-      if (typeof status !== "string" || !validStatuses.includes(status.trim())) {
+      if (!status || typeof status !== "string" || !validStatuses.includes(status.trim())) {
         return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
       }
     }
 
-    // Validate dueDate: if provided, must be valid date
     if (dueDate !== undefined && dueDate !== null && dueDate !== "") {
       if (typeof dueDate !== "string" && !(dueDate instanceof Date)) {
         return res.status(400).json({ message: "Invalid due date format" });
@@ -43,7 +39,7 @@ async function createTask(req, res) {
 
     await task.save();
     res.status(201).json({ message: "Task created successfully", task });
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ message: "Server error" });
   }
 }
@@ -60,7 +56,7 @@ async function getTasks(req, res) {
 
     const tasks = await Task.find(filter).sort({ createdAt: -1 });
     res.status(200).json(tasks);
-  } catch (err) {
+  } catch (_err) {
     res.status(500).json({ message: "Server error" });
   }
 }
@@ -72,7 +68,7 @@ async function getTaskById(req, res) {
       return res.status(404).json({ message: "Task not found" });
     }
     res.status(200).json(task);
-  } catch (err) {
+  } catch (_err) {
     res.status(400).json({ message: "Invalid task ID or task not found" });
   }
 }
@@ -82,17 +78,17 @@ async function updateTask(req, res) {
     const { title, description, status, dueDate } = req.body;
 
     if (title !== undefined) {
-      if (typeof title !== "string" || title.trim() === "") {
+      if (!title || typeof title !== "string" || title.trim() === "") {
         return res.status(400).json({ message: "Title cannot be empty and must be text" });
       }
     }
 
-    if (description !== undefined && typeof description !== "string") {
+    if (description !== undefined && description !== null && typeof description !== "string") {
       return res.status(400).json({ message: "Description must be text" });
     }
 
     if (status !== undefined) {
-      if (typeof status !== "string" || !validStatuses.includes(status.trim())) {
+      if (!status || typeof status !== "string" || !validStatuses.includes(status.trim())) {
         return res.status(400).json({ message: "Status must be todo, in-progress, or done" });
       }
     }
@@ -112,13 +108,13 @@ async function updateTask(req, res) {
     }
 
     if (title !== undefined) task.title = title.trim();
-    if (description !== undefined) task.description = description.trim();
+    if (description !== undefined) task.description = description ? description.trim() : "";
     if (status !== undefined) task.status = status.trim();
     if (dueDate !== undefined) task.dueDate = dueDate ? new Date(dueDate) : null;
 
     await task.save();
     res.status(200).json({ message: "Task updated successfully", task });
-  } catch (err) {
+  } catch (_err) {
     res.status(400).json({ message: "Invalid task ID or server error" });
   }
 }
@@ -130,7 +126,7 @@ async function deleteTask(req, res) {
       return res.status(404).json({ message: "Task not found" });
     }
     res.status(200).json({ message: "Task deleted successfully" });
-  } catch (err) {
+  } catch (_err) {
     res.status(400).json({ message: "Invalid task ID or server error" });
   }
 }
